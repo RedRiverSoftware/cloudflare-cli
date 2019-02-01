@@ -1,4 +1,4 @@
-FROM node:10
+FROM node:11.9.0
 
 RUN npm install -g cloudflare-cli
 RUN apt-get update
