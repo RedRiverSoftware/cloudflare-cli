@@ -33,7 +33,6 @@ if [ $action = "create" ]; then
 	if [ -n "$ingress" ]
 	then
 		echo getting ingress info...
-		echo $ingress
 		resource=$(kubectl --namespace=$namespace get ingress $ingress --output=json)
 		retVal=$?
 		if [ $retVal -ne 0 ]; then
