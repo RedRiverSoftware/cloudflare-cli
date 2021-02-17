@@ -9,14 +9,16 @@ if [ -z "$CF_API_KEY" ]; then echo "variable 'CF_API_KEY' is not set"; bad=1; fi
 if [ -z "$CF_API_EMAIL" ]; then echo "variable 'CF_API_EMAIL' is not set"; bad=1; fi
 if [ -z "$CF_API_DOMAIN" ]; then echo "variable 'CF_API_DOMAIN' is not set"; bad=1; fi
 if [ $action = "create" ]; then
-	if [ -z "$service" ]; then echo "variable 'service' is not set"; bad=1; fi
+	if [ -z "$service" ]; then
+		if [ -z "$ingress" ]; then echo "both variables 'service' and 'ingress' are not set"; bad=1;fi
+	fi
 	if [ -z "$deployment" ]; then echo "variable 'deployment' is not set"; bad=1; fi
 	if [ -z "$namespace" ]; then echo "variable 'namespace' is not set"; bad=1; fi
 fi
 if [ $bad -eq 1 ]
 then
 	echo "please set variables: action, subdomain, CF_API_KEY, CF_API_EMAIL, CF_API_DOMAIN"
-	echo "if action is create, please specify these variables too: namespace, deployment, service"
+	echo "if action is create, please specify these variables too: namespace, deployment, and either service or ingress"
 	echo "valid actions: create, delete"
 	exit 1
 fi
@@ -28,21 +30,30 @@ if [ $action = "create" ]; then
 	echo waiting for deployment to rollout...
 	kubectl --namespace=$namespace rollout status deployment/$deployment
 
-	echo waiting for service to rollout...
-	kubectl --namespace=$namespace rollout status service/$service
-	
-	echo getting service info...
-	service=$(kubectl --namespace=$namespace get service $service --output=json)
-	retVal=$?
-	if [ $retVal -ne 0 ]; then
-		echo failed
-		exit 1
+	if [ -n "$ingress" ]
+	then
+		echo getting ingress info...
+		resource=$(kubectl --namespace=$namespace get ingress $ingress --output=json)
+		retVal=$?
+		if [ $retVal -ne 0 ]; then
+			echo failed
+			exit 1
+		fi
+		if [ -z "$resource" ]; then echo "no ingress data returned"; exit 1; fi
+		echo got ingress info
+	else
+		echo getting service info...
+		resource=$(kubectl --namespace=$namespace get service $service --output=json)
+		retVal=$?
+		if [ $retVal -ne 0 ]; then
+			echo failed
+			exit 1
+		fi
+		if [ -z "$resource" ]; then echo "no service data returned"; exit 1; fi
+		echo got service info
 	fi
-	if [ -z "$service" ]; then echo "no service data returned"; exit 1; fi
-	echo got service info
-
 	echo getting external IP...
-	ip=$(echo "$service" | jq -r '.status.loadBalancer.ingress | .[] | .ip')
+	ip=$(echo "$resource" | jq -r '.status.loadBalancer.ingress | .[] | .ip')
 	retVal=$?
 	if [ $retVal -ne 0 ]; then
 		echo failed
@@ -71,4 +82,3 @@ if [ $retVal -ne 0 ]; then
 	exit 1
 fi
 echo success!
-
