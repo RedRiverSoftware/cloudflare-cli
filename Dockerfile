@@ -1,4 +1,4 @@
-FROM node:14-alpine
+FROM node:16-alpine
 
 RUN npm install -g cloudflare-cli
 RUN apk update && apk add --no-cache jq curl bash
