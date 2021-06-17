@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo cloudflare-cli: k8s-tools v0.0.7
+echo cloudflare-cli: k8s-tools v0.0.8
 
 bad=0
 if [ -z "$action" ]; then echo "variable 'action' is not set"; bad=1; fi
@@ -23,6 +23,7 @@ then
 	exit 1
 fi
 
+record_type=${CF_DNS_TYPE:="A"}
 bad=1
 if [ $action = "create" ]; then
 	bad=0
@@ -63,16 +64,16 @@ if [ $action = "create" ]; then
 	echo public IP: $ip
 
 	echo deleting any existing record...
-	cfcli -e $CF_API_EMAIL -k $CF_API_KEY -d $CF_API_DOMAIN -a -t A rm $subdomain
+	cfcli -e $CF_API_EMAIL -k $CF_API_KEY -d $CF_API_DOMAIN -a -t $record_type rm $subdomain
 
     echo adding...
-    cfcli -e $CF_API_EMAIL -k $CF_API_KEY -d $CF_API_DOMAIN -a -t A add $subdomain $ip
+    cfcli -e $CF_API_EMAIL -k $CF_API_KEY -d $CF_API_DOMAIN -a -t $record_type add $subdomain $ip
     retVal=$?
 fi
 if [ $action = "delete" ]; then
 	bad=0
     echo deleting...
-	cfcli -e $CF_API_EMAIL -k $CF_API_KEY -d $CF_API_DOMAIN -a -t A rm $subdomain
+	cfcli -e $CF_API_EMAIL -k $CF_API_KEY -d $CF_API_DOMAIN -a -t $record_type rm $subdomain
     retVal=$?
 fi
 if [ $bad -eq 1 ]; then echo "unknown action - use create or delete"; exit 1; fi
