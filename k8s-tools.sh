@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo cloudflare-cli: k8s-tools v0.0.10
+echo cloudflare-cli: k8s-tools v0.0.11
 
 bad=0
 if [ -z "$action" ]; then echo "variable 'action' is not set"; bad=1; fi
@@ -53,21 +53,35 @@ if [ $action = "create" ]; then
 		if [ -z "$resource" ]; then echo "no service data returned"; exit 1; fi
 		echo got service info
 	fi
-	echo getting external IP...
-	ip=$(echo "$resource" | jq -r '.status.loadBalancer.ingress | .[] | .ip')
-	retVal=$?
-	if [ $retVal -ne 0 ]; then
-		echo failed
-		exit 1
+
+	if [ $record_type = "A"]
+	then
+		echo getting external IP...
+		dns_record_value=$(echo "$resource" | jq -r '.status.loadBalancer.ingress | .[] | .ip')
+		retVal=$?
+		if [ $retVal -ne 0 ]; then
+			echo failed
+			exit 1
+		fi
+		if [ -z "$dns_record_value" ]; then echo "ip not found"; exit 1; fi
+		echo public IP: $dns_record_value
+	else
+		echo getting external hostname...
+		dns_record_value=$(echo "$resource" | jq -r '.status.loadBalancer.ingress | .[] | .hostname')
+		retVal=$?
+		if [ $retVal -ne 0 ]; then
+			echo failed
+			exit 1
+		fi
+		if [ -z "$dns_record_value" ]; then echo "hostname not found"; exit 1; fi
+		echo public Host Name: $dns_record_value
 	fi
-	if [ -z "$ip" ]; then echo "ip not found"; exit 1; fi
-	echo public IP: $ip
 
 	echo deleting any existing record...
 	cfcli -e $CF_API_EMAIL -k $CF_API_KEY -d $CF_API_DOMAIN -a -t $record_type rm $subdomain
 
     echo adding...
-    cfcli -e $CF_API_EMAIL -k $CF_API_KEY -d $CF_API_DOMAIN -a -t $record_type add $subdomain $ip
+    cfcli -e $CF_API_EMAIL -k $CF_API_KEY -d $CF_API_DOMAIN -a -t $record_type add $subdomain $dns_record_value
     retVal=$?
 fi
 if [ $action = "delete" ]; then
