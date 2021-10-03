@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo cloudflare-cli: k8s-tools v0.0.13
+echo cloudflare-cli: k8s-tools v0.0.14
 
 bad=0
 if [ -z "$action" ]; then echo "variable 'action' is not set"; bad=1; fi
@@ -54,7 +54,7 @@ if [ $action = "create" ]; then
 		echo got service info
 	fi
 
-	if [ $record_type = "A"]
+	if [ $record_type = "A" ]
 	then
 		echo getting external IP...
 		dns_record_value=$(echo "$resource" | jq -r '.status.loadBalancer.ingress | .[] | .ip')
