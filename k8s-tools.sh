@@ -1,10 +1,11 @@
 #!/bin/bash
 
-echo cloudflare-cli: k8s-tools v0.0.14
+echo cloudflare-cli: k8s-tools v0.0.15
 
 bad=0
 if [ -z "$action" ]; then echo "variable 'action' is not set"; bad=1; fi
 if [ -z "$subdomain" ]; then echo "variable 'subdomain' is not set"; bad=1; fi
+if [ -z "$use_proxy"]; then echo "variable 'use_proxy' is not set"; bad=1; fi
 if [ -z "$CF_API_KEY" ]; then echo "variable 'CF_API_KEY' is not set"; bad=1; fi
 if [ -z "$CF_API_EMAIL" ]; then echo "variable 'CF_API_EMAIL' is not set"; bad=1; fi
 if [ -z "$CF_API_DOMAIN" ]; then echo "variable 'CF_API_DOMAIN' is not set"; bad=1; fi
@@ -81,7 +82,7 @@ if [ $action = "create" ]; then
 	cfcli -e $CF_API_EMAIL -k $CF_API_KEY -d $CF_API_DOMAIN -a -t $record_type rm $subdomain
 
     echo adding...
-    cfcli -e $CF_API_EMAIL -k $CF_API_KEY -d $CF_API_DOMAIN -a -t $record_type add $subdomain $dns_record_value
+    cfcli -e $CF_API_EMAIL -k $CF_API_KEY -d $CF_API_DOMAIN -t $record_type add $subdomain $dns_record_value --activate $use_proxy
     retVal=$?
 fi
 if [ $action = "delete" ]; then
