@@ -1,11 +1,11 @@
 #!/bin/bash
 
-echo cloudflare-cli: k8s-tools v0.0.15
+echo cloudflare-cli: k8s-tools v0.0.16
 
 bad=0
 if [ -z "$action" ]; then echo "variable 'action' is not set"; bad=1; fi
 if [ -z "$subdomain" ]; then echo "variable 'subdomain' is not set"; bad=1; fi
-if [ -z "$use_proxy"]; then echo "variable 'use_proxy' is not set"; bad=1; fi
+if [ -z "$use_proxy" ]; then echo "variable 'use_proxy' is not set"; bad=1; fi
 if [ -z "$CF_API_KEY" ]; then echo "variable 'CF_API_KEY' is not set"; bad=1; fi
 if [ -z "$CF_API_EMAIL" ]; then echo "variable 'CF_API_EMAIL' is not set"; bad=1; fi
 if [ -z "$CF_API_DOMAIN" ]; then echo "variable 'CF_API_DOMAIN' is not set"; bad=1; fi
