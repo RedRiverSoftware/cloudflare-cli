@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo cloudflare-cli: k8s-tools v0.0.17
+echo cloudflare-cli: k8s-tools v0.0.20
 
 bad=0
 if [ -z "$action" ]; then echo "variable 'action' is not set"; bad=1; fi
@@ -26,6 +26,12 @@ fi
 
 record_type=${CF_DNS_TYPE:="A"}
 bad=1
+
+zone_id=$(curl https://api.cloudflare.com/client/v4/zones?name=$CF_API_DOMAIN \
+-H "X-Auth-Email: $CF_API_EMAIL" \
+-H "X-Auth-Key: $CF_API_KEY" | jq -r ".result[] | select(.name | contains(\"$CF_API_DOMAIN\")) | .id")
+if [ -z "$zone_id" ]; then echo "zone not found"; exit 1; fi
+
 if [ $action = "create" ]; then
 	bad=0
 
@@ -54,7 +60,6 @@ if [ $action = "create" ]; then
 		if [ -z "$resource" ]; then echo "no service data returned"; exit 1; fi
 		echo got service info
 	fi
-
 	if [ $record_type = "A" ]
 	then
 		echo getting external IP...
@@ -79,16 +84,45 @@ if [ $action = "create" ]; then
 	fi
 
 	echo deleting any existing record...
-	cfcli -e $CF_API_EMAIL -k $CF_API_KEY -d $CF_API_DOMAIN -a -t $record_type rm $subdomain
 
-    echo adding...
-    cfcli -e $CF_API_EMAIL -k $CF_API_KEY -d $CF_API_DOMAIN -t $record_type add $subdomain $dns_record_value --activate $use_proxy
+	echo looking up existing record to delete...
+	cloudflare_record_id=$(curl https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records?search=$subdomain \
+    -H "X-Auth-Email: $CF_API_EMAIL" \
+    -H "X-Auth-Key: $CF_API_KEY" | jq -r ".result[] | select(.name | contains(\"$subdomain\")) | .id")
+
+
+	echo deleting...
+	curl https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records/$cloudflare_record_id \
+    -X DELETE \
+    -H "X-Auth-Email: $CF_API_EMAIL" \
+    -H "X-Auth-Key: $CF_API_KEY"
+
+	echo adding...
+	curl https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records \
+    -H 'Content-Type: application/json' \
+    -H "X-Auth-Email: $CF_API_EMAIL" \
+    -H "X-Auth-Key: $CF_API_KEY" \
+    -d '{
+      "content": "'$dns_record_value'",
+      "name": "'$subdomain'",
+      "proxied": '$use_proxy',
+      "type": "'$record_type'"
+    }'
     retVal=$?
 fi
 if [ $action = "delete" ]; then
 	bad=0
-    echo deleting...
-	cfcli -e $CF_API_EMAIL -k $CF_API_KEY -d $CF_API_DOMAIN -a -t $record_type rm $subdomain
+	echo deleting...
+	echo looking up existing record to delete...
+	cloudflare_record_id=$(curl https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records?search=$subdomain \
+    -H "X-Auth-Email: $CF_API_EMAIL" \
+    -H "X-Auth-Key: $CF_API_KEY" | jq -r ".result[] | select(.name | contains(\"$subdomain\")) | .id")
+
+	echo deleting...
+	curl https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records/$cloudflare_record_id \
+    -X DELETE \
+    -H "X-Auth-Email: $CF_API_EMAIL" \
+    -H "X-Auth-Key: $CF_API_KEY"
     retVal=$?
 fi
 if [ $bad -eq 1 ]; then echo "unknown action - use create or delete"; exit 1; fi
