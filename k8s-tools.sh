@@ -90,25 +90,35 @@ if [ $action = "create" ]; then
     -H "X-Auth-Email: $CF_API_EMAIL" \
     -H "X-Auth-Key: $CF_API_KEY" | jq -r ".result[] | select(.name | contains(\"$subdomain\")) | .id")
 
-
-	echo deleting...
-	curl https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records/$cloudflare_record_id \
-    -X DELETE \
-    -H "X-Auth-Email: $CF_API_EMAIL" \
-    -H "X-Auth-Key: $CF_API_KEY"
-
-	echo adding...
-	curl https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records \
-    -H 'Content-Type: application/json' \
-    -H "X-Auth-Email: $CF_API_EMAIL" \
-    -H "X-Auth-Key: $CF_API_KEY" \
-    -d '{
-      "content": "'$dns_record_value'",
-      "name": "'$subdomain'",
-      "proxied": '$use_proxy',
-      "type": "'$record_type'"
-    }'
-    retVal=$?
+	if [ -z "$cloudflare_record_id" ]
+	then
+		echo creating for first time...
+		curl https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records \
+		-H 'Content-Type: application/json' \
+		-H "X-Auth-Email: $CF_API_EMAIL" \
+		-H "X-Auth-Key: $CF_API_KEY" \
+		-d '{
+		"content": "'$dns_record_value'",
+		"name": "'$subdomain'",
+		"proxied": '$use_proxy',
+		"type": "'$record_type'"
+		}'
+		retVal=$?
+	else
+		echo updating...
+		curl https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records \
+		-X PATCH \
+		-H 'Content-Type: application/json' \
+		-H "X-Auth-Email: $CF_API_EMAIL" \
+		-H "X-Auth-Key: $CF_API_KEY" \
+		-d '{
+		"content": "'$dns_record_value'",
+		"name": "'$subdomain'",
+		"proxied": '$use_proxy',
+		"type": "'$record_type'"
+		}'
+		retVal=$?
+	fi
 fi
 if [ $action = "delete" ]; then
 	bad=0
