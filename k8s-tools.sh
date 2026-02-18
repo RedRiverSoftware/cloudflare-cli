@@ -1,13 +1,12 @@
 #!/bin/bash
 
-echo cloudflare-cli: k8s-tools v0.0.21
+echo cloudflare-cli: k8s-tools v0.0.22
 
 bad=0
 if [ -z "$action" ]; then echo "variable 'action' is not set"; bad=1; fi
 if [ -z "$subdomain" ]; then echo "variable 'subdomain' is not set"; bad=1; fi
 if [ -z "$use_proxy" ]; then echo "variable 'use_proxy' is not set"; bad=1; fi
 if [ -z "$CF_API_KEY" ]; then echo "variable 'CF_API_KEY' is not set"; bad=1; fi
-if [ -z "$CF_API_EMAIL" ]; then echo "variable 'CF_API_EMAIL' is not set"; bad=1; fi
 if [ -z "$CF_API_DOMAIN" ]; then echo "variable 'CF_API_DOMAIN' is not set"; bad=1; fi
 if [ $action = "create" ]; then
 	if [ -z "$service" ]; then
@@ -18,7 +17,7 @@ if [ $action = "create" ]; then
 fi
 if [ $bad -eq 1 ]
 then
-	echo "please set variables: action, subdomain, CF_API_KEY, CF_API_EMAIL, CF_API_DOMAIN"
+	echo "please set variables: action, subdomain, CF_API_KEY, CF_API_DOMAIN"
 	echo "if action is create, please specify these variables too: namespace, deployment, and either service or ingress"
 	echo "valid actions: create, delete"
 	exit 1
@@ -101,7 +100,7 @@ if [ $action = "create" ]; then
 		retVal=$?
 	else
 		echo updating...
-		curl https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records \
+		curl https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records/$cloudflare_record_id \
 		-X PATCH \
 		-H 'Content-Type: application/json' \
 		-H "Authorization: Bearer $CF_API_KEY" \
