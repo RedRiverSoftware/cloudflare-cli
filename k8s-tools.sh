@@ -101,7 +101,7 @@ if [ $action = "create" ]; then
 		retVal=$?
 	else
 		echo updating...
-		curl https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records \
+		curl https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records/$cloudflare_record_id \
 		-X PATCH \
 		-H 'Content-Type: application/json' \
 		-H "Authorization: Bearer $CF_API_KEY" \
