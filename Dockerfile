@@ -10,4 +10,4 @@ RUN mv ./kubectl /usr/local/bin/kubectl
 RUN kubectl version --client
 
 ADD k8s-tools.sh /k8s-tools.sh
-RUN chmod +x /k8s-tools.sh
+RUN sed -i 's/\r$//' /k8s-tools.sh && chmod +x /k8s-tools.sh
