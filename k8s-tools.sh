@@ -45,26 +45,25 @@ zone_id=$(curl -s -G https://api.cloudflare.com/client/v4/zones \
 "${auth[@]}" | jq -r --arg zone "$CF_API_DOMAIN" '.result[] | select(.name == $zone) | .id')
 if [ -z "$zone_id" ]; then echo "zone not found"; exit 1; fi
 
-# Resolves the id of the record named $fqdn, or the empty string.
+# Sets $cloudflare_record_id to the id of the record named $fqdn, or to the empty string.
 #
 # Matching is exact in both the query and the filter. The API's `search` parameter is a substring
 # filter, so looking up `pepper` also returns `pepper-mcp`, and a deploy of one service would then
 # rewrite or delete another service's record.
 #
-# Refuses to continue on a duplicate rather than expanding several ids into a request URL.
+# Assigns to a global rather than printing: called through $(...) it would run in a subshell, where
+# the exit below would end only that subshell and hand the caller an empty id - which reads as "no
+# record exists", so a duplicate would quietly add another instead of stopping.
 lookup_record_id() {
-	local ids
-	ids=$(curl -s -G "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records" \
+	cloudflare_record_id=$(curl -s -G "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records" \
 	--data-urlencode "name=$fqdn" \
 	--data-urlencode "type=$record_type" \
 	"${auth[@]}" | jq -r --arg fqdn "$fqdn" '.result[] | select(.name == $fqdn) | .id')
 
-	if [ "$(printf '%s' "$ids" | grep -c .)" -gt 1 ]; then
+	if [ "$(printf '%s' "$cloudflare_record_id" | grep -c .)" -gt 1 ]; then
 		echo "found more than one $record_type record named $fqdn - refusing to guess" >&2
 		exit 1
 	fi
-
-	printf '%s' "$ids"
 }
 
 if [ $action = "create" ]; then
@@ -119,7 +118,7 @@ if [ $action = "create" ]; then
 	fi
 
 	echo "looking up existing $record_type record for $fqdn..."
-	cloudflare_record_id=$(lookup_record_id)
+	lookup_record_id
 
 	if [ -z "$cloudflare_record_id" ]
 	then
@@ -152,7 +151,7 @@ fi
 if [ $action = "delete" ]; then
 	bad=0
 	echo "looking up existing $record_type record for $fqdn..."
-	cloudflare_record_id=$(lookup_record_id)
+	lookup_record_id
 
 	if [ -z "$cloudflare_record_id" ]
 	then
