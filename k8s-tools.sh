@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo cloudflare-cli: k8s-tools v0.0.23
+echo cloudflare-cli: k8s-tools v0.0.24
 
 bad=0
 if [ -z "$action" ]; then echo "variable 'action' is not set"; bad=1; fi
@@ -26,9 +26,46 @@ fi
 record_type=${CF_DNS_TYPE:="A"}
 bad=1
 
-zone_id=$(curl https://api.cloudflare.com/client/v4/zones?name=$CF_API_DOMAIN \
--H "Authorization: Bearer $CF_API_KEY" | jq -r ".result[] | select(.name | contains(\"$CF_API_DOMAIN\")) | .id")
+# An API token authenticates as a bearer; a Global API Key needs the account email alongside it.
+# Both are accepted, so a chart still supplying CF_API_EMAIL keeps working on this version.
+if [ -n "$CF_API_EMAIL" ]; then
+	auth=(-H "X-Auth-Email: $CF_API_EMAIL" -H "X-Auth-Key: $CF_API_KEY")
+else
+	auth=(-H "Authorization: Bearer $CF_API_KEY")
+fi
+
+# The record this invocation owns, as Cloudflare names it. Every lookup below matches it exactly.
+case "$subdomain" in
+	*".$CF_API_DOMAIN") fqdn="$subdomain" ;;
+	*) fqdn="$subdomain.$CF_API_DOMAIN" ;;
+esac
+
+zone_id=$(curl -s -G https://api.cloudflare.com/client/v4/zones \
+--data-urlencode "name=$CF_API_DOMAIN" \
+"${auth[@]}" | jq -r --arg zone "$CF_API_DOMAIN" '.result[] | select(.name == $zone) | .id')
 if [ -z "$zone_id" ]; then echo "zone not found"; exit 1; fi
+
+# Resolves the id of the record named $fqdn, or the empty string.
+#
+# Matching is exact in both the query and the filter. The API's `search` parameter is a substring
+# filter, so looking up `pepper` also returns `pepper-mcp`, and a deploy of one service would then
+# rewrite or delete another service's record.
+#
+# Refuses to continue on a duplicate rather than expanding several ids into a request URL.
+lookup_record_id() {
+	local ids
+	ids=$(curl -s -G "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records" \
+	--data-urlencode "name=$fqdn" \
+	--data-urlencode "type=$record_type" \
+	"${auth[@]}" | jq -r --arg fqdn "$fqdn" '.result[] | select(.name == $fqdn) | .id')
+
+	if [ "$(printf '%s' "$ids" | grep -c .)" -gt 1 ]; then
+		echo "found more than one $record_type record named $fqdn - refusing to guess" >&2
+		exit 1
+	fi
+
+	printf '%s' "$ids"
+}
 
 if [ $action = "create" ]; then
 	bad=0
@@ -81,32 +118,31 @@ if [ $action = "create" ]; then
 		echo public Host Name: $dns_record_value
 	fi
 
-	echo looking up existing record to delete...
-	cloudflare_record_id=$(curl https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records?search=$subdomain \
-    -H "Authorization: Bearer $CF_API_KEY" | jq -r ".result[] | select(.name | contains(\"$subdomain\")) | .id")
+	echo "looking up existing $record_type record for $fqdn..."
+	cloudflare_record_id=$(lookup_record_id)
 
 	if [ -z "$cloudflare_record_id" ]
 	then
 		echo creating for first time...
-		curl https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records \
+		curl -s https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records \
 		-H 'Content-Type: application/json' \
-		-H "Authorization: Bearer $CF_API_KEY" \
+		"${auth[@]}" \
 		-d '{
 		"content": "'$dns_record_value'",
-		"name": "'$subdomain'",
+		"name": "'$fqdn'",
 		"proxied": '$use_proxy',
 		"type": "'$record_type'"
 		}'
 		retVal=$?
 	else
 		echo updating...
-		curl https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records/$cloudflare_record_id \
+		curl -s "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records/$cloudflare_record_id" \
 		-X PATCH \
 		-H 'Content-Type: application/json' \
-		-H "Authorization: Bearer $CF_API_KEY" \
+		"${auth[@]}" \
 		-d '{
 		"content": "'$dns_record_value'",
-		"name": "'$subdomain'",
+		"name": "'$fqdn'",
 		"proxied": '$use_proxy',
 		"type": "'$record_type'"
 		}'
@@ -115,16 +151,20 @@ if [ $action = "create" ]; then
 fi
 if [ $action = "delete" ]; then
 	bad=0
-	echo deleting...
-	echo looking up existing record to delete...
-	cloudflare_record_id=$(curl https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records?search=$subdomain \
-    -H "Authorization: Bearer $CF_API_KEY" | jq -r ".result[] | select(.name | contains(\"$subdomain\")) | .id")
+	echo "looking up existing $record_type record for $fqdn..."
+	cloudflare_record_id=$(lookup_record_id)
 
-	echo deleting...
-	curl https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records/$cloudflare_record_id \
-    -X DELETE \
-    -H "Authorization: Bearer $CF_API_KEY"
-    retVal=$?
+	if [ -z "$cloudflare_record_id" ]
+	then
+		echo "no $record_type record named $fqdn - nothing to delete"
+		retVal=0
+	else
+		echo deleting...
+		curl -s "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records/$cloudflare_record_id" \
+		-X DELETE \
+		"${auth[@]}"
+		retVal=$?
+	fi
 fi
 if [ $bad -eq 1 ]; then echo "unknown action - use create or delete"; exit 1; fi
 
