@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo cloudflare-cli: k8s-tools v0.0.24
+echo cloudflare-cli: k8s-tools v0.0.25
 
 bad=0
 if [ -z "$action" ]; then echo "variable 'action' is not set"; bad=1; fi
@@ -24,6 +24,10 @@ then
 fi
 
 record_type=${CF_DNS_TYPE:="A"}
+# Two publication cycles. The controller republishes roughly every 55s, so allowing one
+# cycle leaves no room for a missed one.
+ADDRESS_TIMEOUT=${ADDRESS_TIMEOUT:=120}
+ADDRESS_POLL_SECONDS=${ADDRESS_POLL_SECONDS:=5}
 bad=1
 
 # An API token authenticates as a bearer; a Global API Key needs the account email alongside it.
@@ -72,50 +76,42 @@ if [ $action = "create" ]; then
 	echo waiting for deployment to rollout...
 	kubectl --namespace=$namespace rollout status deployment/$deployment
 
-	if [ -n "$ingress" ]
-	then
-		echo getting ingress info...
-		resource=$(kubectl --namespace=$namespace get ingress $ingress --output=json)
-		retVal=$?
-		if [ $retVal -ne 0 ]; then
-			echo failed
-			exit 1
-		fi
-		if [ -z "$resource" ]; then echo "no ingress data returned"; exit 1; fi
-		echo got ingress info
+	if [ -n "$ingress" ]; then
+		kind=ingress; target=$ingress
 	else
-		echo getting service info...
-		resource=$(kubectl --namespace=$namespace get service $service --output=json)
-		retVal=$?
-		if [ $retVal -ne 0 ]; then
-			echo failed
-			exit 1
-		fi
-		if [ -z "$resource" ]; then echo "no service data returned"; exit 1; fi
-		echo got service info
+		kind=service; target=$service
 	fi
-	if [ $record_type = "A" ]
-	then
-		echo getting external IP...
-		dns_record_value=$(echo "$resource" | jq -r '.status.loadBalancer.ingress | .[] | .ip')
-		retVal=$?
-		if [ $retVal -ne 0 ]; then
-			echo failed
-			exit 1
-		fi
-		if [ -z "$dns_record_value" ]; then echo "ip not found"; exit 1; fi
-		echo public IP: $dns_record_value
+
+	if [ "$record_type" = "A" ]; then
+		field=ip; label="external IP"
 	else
-		echo getting external hostname...
-		dns_record_value=$(echo "$resource" | jq -r '.status.loadBalancer.ingress | .[] | .hostname')
-		retVal=$?
-		if [ $retVal -ne 0 ]; then
-			echo failed
+		field=hostname; label="external hostname"
+	fi
+
+	# The address is published by the ingress controller on its own schedule, a little under a
+	# minute behind the rollout this job has just waited for, so reading it once reads it too early.
+	# Nothing on the object separates "not assigned yet" from "never will be" - IngressStatus holds
+	# only loadBalancer.ingress[] and carries no conditions - so waiting and then giving up is the
+	# only way to tell them apart.
+	echo "waiting up to ${ADDRESS_TIMEOUT}s for the $kind $label..."
+	deadline=$(( $(date +%s) + ADDRESS_TIMEOUT ))
+	while :; do
+		resource=$(kubectl --namespace=$namespace get $kind $target --output=json 2>/dev/null)
+		if [ -n "$resource" ]; then
+			dns_record_value=$(echo "$resource" | jq -r ".status.loadBalancer.ingress[0].$field // empty")
+			[ -n "$dns_record_value" ] && break
+		fi
+
+		if [ "$(date +%s)" -ge "$deadline" ]; then
+			echo "no $label on $kind/$target after ${ADDRESS_TIMEOUT}s" >&2
+			echo "--- events ---" >&2
+			kubectl --namespace=$namespace describe $kind $target 2>&1 | sed -n '/^Events:/,$p' >&2
 			exit 1
 		fi
-		if [ -z "$dns_record_value" ]; then echo "hostname not found"; exit 1; fi
-		echo public Host Name: $dns_record_value
-	fi
+
+		sleep "$ADDRESS_POLL_SECONDS"
+	done
+	echo "public ${label}: $dns_record_value"
 
 	echo "looking up existing $record_type record for $fqdn..."
 	lookup_record_id
